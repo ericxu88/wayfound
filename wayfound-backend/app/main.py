@@ -13,9 +13,15 @@ from strawberry.fastapi import GraphQLRouter
 async def lifespan(app: FastAPI):
     # Startup
     print("Wayfound API starting up! 🚀")
-    # TODO: We'll add database connection later
-    # from app.database import engine, metadata
-    # metadata.create_all(bind=engine)
+    
+    # Import all models to register them with SQLAlchemy
+    from app.models import User, Roadmap, Survey, Progress
+    from app.database import engine, metadata
+    
+    # Create all tables
+    metadata.create_all(bind=engine)
+    print("Database tables created! 📊")
+    
     yield
     # Shutdown
     print("App shutting down...")
