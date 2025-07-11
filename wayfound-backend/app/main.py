@@ -5,6 +5,11 @@ from contextlib import asynccontextmanager
 from strawberry.fastapi import GraphQLRouter
 import strawberry
 from typing import List
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Simple inline schema for testing
 @strawberry.type
@@ -296,10 +301,11 @@ class Mutation:
     
     @strawberry.mutation
     def create_roadmap(self, user_id: str, input_data: CreateRoadmapInput) -> Roadmap:
-        """Create a new roadmap with mock milestones"""
+        """Create a new roadmap with AI-generated milestones"""
         try:
             from app.database import SessionLocal
             from app.models import Roadmap as RoadmapModel, User as UserModel
+            from app.services.llm_service import roadmap_generator
             
             db = SessionLocal()
             try:
@@ -308,16 +314,20 @@ class Mutation:
                 if not user:
                     raise Exception(f"User {user_id} not found")
                 
-                # Generate mock milestones
-                milestones = generate_mock_milestones(input_data.goal_text, input_data.timeline_days)
+                # Generate AI roadmap
+                print(f"🤖 Generating AI roadmap for: {input_data.goal_text}")
+                ai_roadmap = roadmap_generator.generate_roadmap(
+                    goal_text=input_data.goal_text,
+                    timeline_days=input_data.timeline_days
+                )
                 
                 # Create roadmap in database
                 db_roadmap = RoadmapModel(
                     user_id=user_id,
                     goal_text=input_data.goal_text,
                     timeline_days=input_data.timeline_days,
-                    milestones=milestones,
-                    domain=classify_domain(input_data.goal_text),
+                    milestones=ai_roadmap["milestones"],
+                    domain=ai_roadmap["domain"],
                     status="active"
                 )
                 
@@ -325,11 +335,12 @@ class Mutation:
                 db.commit()
                 db.refresh(db_roadmap)
                 
+                print(f"✅ AI roadmap created with {len(ai_roadmap['milestones'])} milestones")
                 return convert_db_roadmap_to_graphql(db_roadmap)
             finally:
                 db.close()
         except Exception as e:
-            print(f"Error creating roadmap: {e}")
+            print(f"❌ Error creating roadmap: {e}")
             raise Exception(f"Failed to create roadmap: {str(e)}")
 
 # Create the schema inline
@@ -352,8 +363,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Database setup failed: {e}")
     
+    # Check OpenAI API key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        print("🤖 OpenAI API key found - AI generation enabled!")
+    else:
+        print("⚠️  OpenAI API key not found - using fallback generation")
+        print("   Add OPENAI_API_KEY=sk-your-key to your .env file for AI features")
+    
     # Print schema info (simplified)
     print("GraphQL schema loaded successfully! ✅")
+    ai_status = "with AI!" if api_key else "(fallback mode)"
+    print(f"🤖 Roadmap generation enabled {ai_status}")
     print("Available queries: hello, testUsers, userCount, roadmap, userRoadmaps")
     print("Available mutations: createUser, createRoadmap")
     
