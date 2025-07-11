@@ -13,10 +13,180 @@ class TestUser:
     email: str
     created_at: str
 
+@strawberry.type
+class Milestone:
+    id: str
+    day: int
+    title: str
+    description: str
+    tasks: List[str]
+    resources: List[str]
+    completed: bool = False
+
+@strawberry.type
+class Roadmap:
+    id: str
+    user_id: str
+    goal_text: str
+    domain: str
+    timeline_days: int
+    milestones: List[Milestone]
+    status: str
+    created_at: str
+
 @strawberry.input
 class TestUserInput:
     email: str
     password: str
+
+@strawberry.input
+class CreateRoadmapInput:
+    goal_text: str
+    timeline_days: int = 30
+
+# Helper functions for roadmap generation
+def classify_domain(goal_text: str) -> str:
+    """Simple domain classification (will be replaced with AI later)"""
+    goal_lower = goal_text.lower()
+    
+    if any(word in goal_lower for word in ["cook", "recipe", "bake", "food", "kitchen", "chef"]):
+        return "cooking"
+    elif any(word in goal_lower for word in ["fit", "gym", "workout", "muscle", "weight", "exercise"]):
+        return "fitness"
+    elif any(word in goal_lower for word in ["code", "program", "python", "javascript", "app", "software"]):
+        return "programming"
+    elif any(word in goal_lower for word in ["language", "spanish", "french", "italian", "speak"]):
+        return "language"
+    elif any(word in goal_lower for word in ["paint", "draw", "art", "sketch", "canvas"]):
+        return "art"
+    else:
+        return "general"
+
+def generate_mock_milestones(goal_text: str, timeline_days: int) -> List[dict]:
+    """Generate mock milestones based on goal and timeline"""
+    domain = classify_domain(goal_text)
+    
+    # Calculate number of milestones (roughly one per week)
+    num_milestones = max(2, min(8, timeline_days // 7))
+    days_per_milestone = timeline_days // num_milestones
+    
+    milestones = []
+    
+    for i in range(num_milestones):
+        day = (i * days_per_milestone) + 1
+        milestone = create_milestone_for_domain(domain, i + 1, day, goal_text, num_milestones)
+        milestones.append(milestone)
+    
+    return milestones
+
+def create_milestone_for_domain(domain: str, milestone_num: int, day: int, goal_text: str, total_milestones: int) -> dict:
+    """Create domain-specific milestones"""
+    
+    if domain == "cooking":
+        titles = ["Kitchen Setup & Basics", "Fundamental Techniques", "Recipe Practice", "Advanced Skills"]
+        descriptions = [
+            "Set up your kitchen and learn basic knife skills",
+            "Master essential cooking methods and techniques", 
+            "Practice with simple recipes and build confidence",
+            "Tackle complex recipes and develop your style"
+        ]
+        tasks = [
+            ["Organize kitchen tools", "Learn knife safety", "Practice basic cuts"],
+            ["Learn sautéing and boiling", "Practice seasoning", "Master timing"],
+            ["Cook 3 simple recipes", "Document what you learn", "Adjust recipes to taste"],
+            ["Try complex techniques", "Create your own variations", "Share with friends"]
+        ]
+        
+    elif domain == "fitness":
+        titles = ["Foundation & Form", "Building Strength", "Progression", "Mastery"]
+        descriptions = [
+            "Learn proper form and establish workout routine",
+            "Focus on progressive overload and consistency",
+            "Advanced techniques and goal-specific training", 
+            "Peak performance and long-term maintenance"
+        ]
+        tasks = [
+            ["Learn basic exercises", "Establish workout schedule", "Focus on form"],
+            ["Increase weights gradually", "Track your progress", "Maintain consistency"],
+            ["Add advanced exercises", "Optimize nutrition", "Monitor recovery"],
+            ["Achieve target goals", "Plan long-term strategy", "Help others"]
+        ]
+        
+    elif domain == "programming":
+        titles = ["Development Environment", "Core Concepts", "Building Projects", "Advanced Skills"]
+        descriptions = [
+            "Set up tools and learn programming fundamentals",
+            "Master key programming concepts and syntax",
+            "Build real projects to apply your knowledge",
+            "Learn advanced patterns and best practices"
+        ]
+        tasks = [
+            ["Install development tools", "Write your first program", "Learn basic syntax"],
+            ["Understand variables and functions", "Practice with exercises", "Debug simple errors"],
+            ["Build a small project", "Use version control", "Add features iteratively"],
+            ["Learn design patterns", "Optimize performance", "Contribute to open source"]
+        ]
+        
+    else:  # general
+        titles = ["Getting Started", "Building Foundation", "Skill Development", "Mastery & Growth"]
+        descriptions = [
+            f"Begin your journey with {goal_text}",
+            "Build fundamental knowledge and skills",
+            "Develop intermediate capabilities",
+            "Achieve mastery and continue growing"
+        ]
+        tasks = [
+            ["Research your goal", "Gather necessary resources", "Create learning plan"],
+            ["Study fundamentals", "Practice basic skills", "Join communities"],
+            ["Apply knowledge practically", "Seek feedback", "Overcome challenges"],
+            ["Achieve your goal", "Teach others", "Set new challenges"]
+        ]
+    
+    # Select appropriate milestone based on progress
+    index = min(milestone_num - 1, len(titles) - 1)
+    
+    return {
+        "id": f"milestone_{milestone_num}",
+        "day": day,
+        "title": titles[index],
+        "description": descriptions[index],
+        "tasks": tasks[index],
+        "resources": [
+            "YouTube tutorials",
+            "Online courses", 
+            "Community forums",
+            "Practice exercises"
+        ],
+        "completed": False
+    }
+
+def convert_db_roadmap_to_graphql(db_roadmap) -> Roadmap:
+    """Convert database roadmap to GraphQL type"""
+    # Convert JSON milestones to GraphQL Milestone objects
+    milestones = []
+    if db_roadmap.milestones:
+        for milestone_data in db_roadmap.milestones:
+            milestone = Milestone(
+                id=milestone_data.get("id", ""),
+                day=milestone_data.get("day", 1),
+                title=milestone_data.get("title", ""),
+                description=milestone_data.get("description", ""),
+                tasks=milestone_data.get("tasks", []),
+                resources=milestone_data.get("resources", []),
+                completed=milestone_data.get("completed", False)
+            )
+            milestones.append(milestone)
+    
+    return Roadmap(
+        id=db_roadmap.id,
+        user_id=db_roadmap.user_id,
+        goal_text=db_roadmap.goal_text,
+        domain=db_roadmap.domain or "general",
+        timeline_days=db_roadmap.timeline_days,
+        milestones=milestones,
+        status=db_roadmap.status,
+        created_at=db_roadmap.created_at.isoformat()
+    )
 
 @strawberry.type
 class Query:
@@ -48,6 +218,43 @@ class Query:
         except Exception as e:
             print(f"Error getting user count: {e}")
             return 0
+    
+    @strawberry.field
+    def roadmap(self, roadmap_id: str) -> Roadmap:
+        """Get a single roadmap by ID"""
+        try:
+            from app.database import SessionLocal
+            from app.models import Roadmap as RoadmapModel
+            
+            db = SessionLocal()
+            try:
+                db_roadmap = db.query(RoadmapModel).filter(RoadmapModel.id == roadmap_id).first()
+                if not db_roadmap:
+                    raise Exception(f"Roadmap {roadmap_id} not found")
+                
+                return convert_db_roadmap_to_graphql(db_roadmap)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Error getting roadmap: {e}")
+            raise Exception(f"Failed to get roadmap: {str(e)}")
+    
+    @strawberry.field
+    def user_roadmaps(self, user_id: str) -> List[Roadmap]:
+        """Get all roadmaps for a user"""
+        try:
+            from app.database import SessionLocal
+            from app.models import Roadmap as RoadmapModel
+            
+            db = SessionLocal()
+            try:
+                db_roadmaps = db.query(RoadmapModel).filter(RoadmapModel.user_id == user_id).all()
+                return [convert_db_roadmap_to_graphql(roadmap) for roadmap in db_roadmaps]
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Error getting user roadmaps: {e}")
+            return []
 
 @strawberry.type
 class Mutation:
@@ -86,6 +293,44 @@ class Mutation:
         except Exception as e:
             print(f"Error creating user: {e}")
             raise Exception(f"Failed to create user: {str(e)}")
+    
+    @strawberry.mutation
+    def create_roadmap(self, user_id: str, input_data: CreateRoadmapInput) -> Roadmap:
+        """Create a new roadmap with mock milestones"""
+        try:
+            from app.database import SessionLocal
+            from app.models import Roadmap as RoadmapModel, User as UserModel
+            
+            db = SessionLocal()
+            try:
+                # Check if user exists
+                user = db.query(UserModel).filter(UserModel.id == user_id).first()
+                if not user:
+                    raise Exception(f"User {user_id} not found")
+                
+                # Generate mock milestones
+                milestones = generate_mock_milestones(input_data.goal_text, input_data.timeline_days)
+                
+                # Create roadmap in database
+                db_roadmap = RoadmapModel(
+                    user_id=user_id,
+                    goal_text=input_data.goal_text,
+                    timeline_days=input_data.timeline_days,
+                    milestones=milestones,
+                    domain=classify_domain(input_data.goal_text),
+                    status="active"
+                )
+                
+                db.add(db_roadmap)
+                db.commit()
+                db.refresh(db_roadmap)
+                
+                return convert_db_roadmap_to_graphql(db_roadmap)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Error creating roadmap: {e}")
+            raise Exception(f"Failed to create roadmap: {str(e)}")
 
 # Create the schema inline
 schema = strawberry.Schema(query=Query, mutation=Mutation)
@@ -109,8 +354,8 @@ async def lifespan(app: FastAPI):
     
     # Print schema info (simplified)
     print("GraphQL schema loaded successfully! ✅")
-    print("Available queries: hello, testUsers, userCount")
-    print("Available mutations: createUser")
+    print("Available queries: hello, testUsers, userCount, roadmap, userRoadmaps")
+    print("Available mutations: createUser, createRoadmap")
     
     yield
     # Shutdown
