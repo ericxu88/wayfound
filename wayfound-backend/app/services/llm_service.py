@@ -98,21 +98,33 @@ class RoadmapGenerator:
         prompt = self._build_roadmap_prompt(goal_text, timeline_days, domain, survey_data)
         
         try:
+            print(f"🔄 Calling OpenAI GPT-4 for roadmap generation...")
+            
             response = self.client.chat.completions.create(
-                model="gpt-4",  # Use GPT-4 for better roadmap quality
+                model="gpt-3.5-turbo",  # Use GPT-3.5 for better compatibility
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=4000,
+                max_tokens=3000,
                 temperature=0.7
             )
             
+            print(f"✅ OpenAI response received")
+            response_content = response.choices[0].message.content
+            print(f"📝 Response length: {len(response_content)} characters")
+            
             # Parse the JSON response
-            roadmap_data = json.loads(response.choices[0].message.content)
+            roadmap_data = json.loads(response_content)
+            print(f"🎯 Parsed roadmap with {len(roadmap_data.get('milestones', []))} milestones")
             
             # Validate and structure the response
             return self._validate_roadmap(roadmap_data, domain, timeline_days)
             
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing error: {e}")
+            print(f"🔍 Raw response: {response_content[:500]}...")
+            return self._generate_fallback_roadmap(goal_text, timeline_days, domain)
         except Exception as e:
-            print(f"Error generating roadmap: {e}")
+            print(f"❌ Error generating roadmap: {e}")
+            print(f"🔄 Falling back to mock generation")
             # Fall back to mock generation if AI fails
             return self._generate_fallback_roadmap(goal_text, timeline_days, domain)
     
@@ -145,8 +157,21 @@ Requirements:
 1. Create {max(2, min(8, timeline_days // 7))} milestones spread across {timeline_days} days
 2. Each milestone should be achievable and build on previous ones
 3. Include specific, actionable tasks for each milestone
-4. Provide relevant resources (YouTube channels, websites, books, tools)
+4. **CRITICAL: Provide SPECIFIC, HIGH-QUALITY resources for each milestone:**
+   - Exact YouTube channel names (e.g., "Joshua Weissman", "Bon Appétit")
+   - Specific online courses (e.g., "MasterClass: Gordon Ramsay Teaches Cooking")
+   - Actual book titles and authors
+   - Specific tools, apps, or websites
+   - Real blogs, articles, or documentation
+   - NO generic phrases like "YouTube tutorials" or "online courses"
+
 5. Make it practical and realistic for the given timeline
+
+Example of good resources:
+- "Joshua Weissman's Ramen series on YouTube"
+- "Ivan Ramen cookbook by Ivan Orkin"
+- "Ramen_Lord's comprehensive guide on Reddit r/ramen"
+- "Kansui (alkaline mineral water) for noodle making"
 
 Respond with a JSON object in this exact format:
 {{
@@ -159,13 +184,13 @@ Respond with a JSON object in this exact format:
       "day": <day_number>,
       "title": "<milestone_title>",
       "description": "<detailed_description>",
-      "tasks": ["<task1>", "<task2>", "<task3>"],
-      "resources": ["<resource1>", "<resource2>", "<resource3>"]
+      "tasks": ["<specific_task1>", "<specific_task2>", "<specific_task3>"],
+      "resources": ["<specific_resource1>", "<specific_resource2>", "<specific_resource3>"]
     }}
   ]
 }}
 
-Ensure the JSON is valid and complete.
+Ensure the JSON is valid and complete. Focus on providing REAL, SPECIFIC resources that actually exist.
 """
         
         return prompt
@@ -181,6 +206,12 @@ Focus on:
 - Understanding ingredients and flavors
 - Recipe progression from simple to complex
 - Kitchen equipment and organization
+
+Suggest SPECIFIC resources like:
+- Exact YouTube channels: "Joshua Weissman", "Bon Appétit", "Babish Culinary Universe"
+- Specific cookbooks: "Salt Fat Acid Heat by Samin Nosrat"
+- Cooking schools: "Rouxbe Online Culinary School"
+- Equipment brands: "Victorinox knives", "Lodge cast iron"
 """,
             "fitness": """
 Focus on:
@@ -189,6 +220,12 @@ Focus on:
 - Nutrition fundamentals
 - Rest and recovery
 - Goal-specific training (strength, cardio, etc.)
+
+Suggest SPECIFIC resources like:
+- YouTube channels: "AthleanX", "Jeff Nippard", "Calisthenic Movement"
+- Apps: "MyFitnessPal", "Strong (iOS)", "Jefit"
+- Programs: "StrongLifts 5x5", "Starting Strength"
+- Books: "Bigger Leaner Stronger by Michael Matthews"
 """,
             "programming": """
 Focus on:
@@ -197,6 +234,12 @@ Focus on:
 - Hands-on project building
 - Version control and best practices
 - Problem-solving and debugging skills
+
+Suggest SPECIFIC resources like:
+- Platforms: "FreeCodeCamp", "The Odin Project", "Codecademy"
+- YouTube channels: "Traversy Media", "Net Ninja", "Programming with Mosh"
+- Documentation: "MDN Web Docs", "React official docs"
+- Tools: "VS Code", "Git/GitHub", "Stack Overflow"
 """,
             "language": """
 Focus on:
@@ -205,6 +248,12 @@ Focus on:
 - Vocabulary building strategies
 - Cultural context and phrases
 - Speaking and listening practice
+
+Suggest SPECIFIC resources like:
+- Apps: "Duolingo", "Babbel", "HelloTalk"
+- YouTube channels: "SpanishDict", "Français avec Pierre"
+- Websites: "conjuguemos.com", "News in Slow Spanish"
+- Books: "Madrigal's Magic Key to Spanish Words"
 """,
             "art": """
 Focus on:
@@ -213,6 +262,12 @@ Focus on:
 - Practice exercises and studies
 - Style development and creativity
 - Building a portfolio of work
+
+Suggest SPECIFIC resources like:
+- YouTube channels: "Proko", "Marco Bucci", "Sinix Design"
+- Online courses: "Schoolism", "New Masters Academy"
+- Books: "Drawing on the Right Side of the Brain by Betty Edwards"
+- Software: "Photoshop", "Procreate", "Clip Studio Paint"
 """,
             "general": """
 Focus on:
@@ -221,6 +276,8 @@ Focus on:
 - Practical application and practice
 - Community and resource discovery
 - Continuous improvement and adaptation
+
+Always suggest SPECIFIC, real resources rather than generic ones.
 """
         }
         
@@ -254,30 +311,119 @@ Focus on:
         return validated
     
     def _generate_fallback_roadmap(self, goal_text: str, timeline_days: int, domain: str) -> Dict:
-        """Generate a simple fallback roadmap if AI fails"""
+        """Generate a smart fallback roadmap if AI fails"""
         
-        num_milestones = max(2, min(4, timeline_days // 7))
+        print(f"🔄 Generating smart fallback for domain: {domain}")
+        
+        num_milestones = max(2, min(6, timeline_days // 7))
         days_per_milestone = timeline_days // num_milestones
         
         milestones = []
-        titles = ["Getting Started", "Building Foundation", "Skill Development", "Mastery & Practice"]
         
+        # Domain-specific milestone templates
+        domain_templates = {
+            "cooking": {
+                "titles": ["Kitchen Setup & Basics", "Fundamental Techniques", "Recipe Mastery", "Advanced Skills", "Flavor Perfection", "Presentation & Style"],
+                "descriptions": [
+                    "Set up your kitchen workspace and learn essential knife skills and safety",
+                    "Master fundamental cooking techniques like sautéing, boiling, and seasoning",
+                    "Practice core recipes and build confidence with timing and ingredients",
+                    "Learn advanced techniques and tackle more complex preparations",
+                    "Develop your palate and perfect flavor balancing",
+                    "Focus on plating, presentation, and developing your personal style"
+                ],
+                "tasks": [
+                    ["Organize kitchen tools and workspace", "Learn basic knife cuts and safety", "Practice proper posture and grip", "Stock essential ingredients"],
+                    ["Master sautéing and heat control", "Practice seasoning techniques", "Learn timing for multiple dishes", "Understand ingredient interactions"],
+                    ["Cook 3-5 foundational recipes", "Document cooking notes and adjustments", "Practice mise en place", "Taste and adjust seasoning"],
+                    ["Try complex multi-step recipes", "Learn sauce-making techniques", "Practice temperature control", "Experiment with ingredient substitutions"],
+                    ["Develop signature flavor combinations", "Practice balancing sweet, salty, umami", "Learn wine/sake pairing basics", "Create recipe variations"],
+                    ["Master plating techniques", "Practice food photography", "Develop presentation style", "Share dishes with others for feedback"]
+                ]
+            },
+            "fitness": {
+                "titles": ["Foundation & Assessment", "Form & Technique", "Building Strength", "Progressive Training", "Performance Optimization", "Long-term Success"],
+                "descriptions": [
+                    "Assess current fitness level and establish proper foundation",
+                    "Learn correct form for all exercises and movement patterns", 
+                    "Focus on building base strength with progressive overload",
+                    "Advance to intermediate techniques and specialized training",
+                    "Optimize performance through advanced programming",
+                    "Develop sustainable long-term fitness habits"
+                ],
+                "tasks": [
+                    ["Complete fitness assessment", "Set realistic goals", "Learn basic movements", "Establish workout schedule"],
+                    ["Master bodyweight exercises", "Learn proper lifting form", "Practice mobility routines", "Focus on breathing techniques"],
+                    ["Implement progressive overload", "Track weights and reps", "Maintain consistent schedule", "Focus on compound movements"],
+                    ["Add advanced exercises", "Implement periodization", "Optimize nutrition timing", "Monitor recovery metrics"],
+                    ["Fine-tune programming", "Track performance metrics", "Optimize sleep and recovery", "Consider specialized coaching"],
+                    ["Develop maintenance routine", "Set new challenges", "Help others with fitness", "Celebrate achievements"]
+                ]
+            },
+            "programming": {
+                "titles": ["Environment Setup", "Programming Fundamentals", "Project Building", "Advanced Concepts", "Best Practices", "Professional Development"],
+                "descriptions": [
+                    "Set up development environment and learn basic programming concepts",
+                    "Master fundamental programming concepts and syntax",
+                    "Build real projects to apply your knowledge practically",
+                    "Learn advanced programming patterns and concepts",
+                    "Adopt industry best practices and clean code principles",
+                    "Develop professional skills and contribute to the community"
+                ],
+                "tasks": [
+                    ["Install development tools and IDE", "Learn version control basics", "Write your first 'Hello World'", "Understand basic syntax"],
+                    ["Master variables and data types", "Learn control flow and loops", "Practice with functions", "Debug simple programs"],
+                    ["Build a small personal project", "Learn to break down problems", "Practice iterative development", "Add features gradually"],
+                    ["Learn object-oriented programming", "Understand design patterns", "Practice with APIs", "Work with databases"],
+                    ["Learn code review practices", "Write unit tests", "Follow style guides", "Optimize for performance"],
+                    ["Contribute to open source", "Build a portfolio", "Network with developers", "Continue learning new technologies"]
+                ]
+            }
+        }
+        
+        # Get templates for domain or use general
+        if domain in domain_templates:
+            templates = domain_templates[domain]
+        else:
+            templates = {
+                "titles": ["Getting Started", "Building Foundation", "Skill Development", "Advanced Practice", "Mastery Focus", "Continuous Growth"],
+                "descriptions": [
+                    f"Begin your journey with {goal_text} by establishing fundamentals",
+                    "Build a solid foundation of knowledge and basic skills",
+                    "Develop intermediate capabilities through focused practice",
+                    "Apply advanced techniques and tackle challenging projects",
+                    "Refine your skills and develop personal mastery",
+                    "Continue growing and helping others in your journey"
+                ],
+                "tasks": [
+                    ["Research your goal thoroughly", "Gather necessary resources", "Create a detailed learning plan", "Set up your workspace"],
+                    ["Study fundamental concepts", "Practice basic skills daily", "Join relevant communities", "Find mentors or guides"],
+                    ["Apply knowledge practically", "Seek feedback regularly", "Overcome initial challenges", "Build confidence"],
+                    ["Take on complex challenges", "Experiment with variations", "Develop problem-solving skills", "Share your progress"],
+                    ["Perfect your technique", "Develop signature style", "Teach others your skills", "Set higher standards"],
+                    ["Pursue advanced opportunities", "Mentor newcomers", "Continue learning", "Set new challenges"]
+                ]
+            }
+        
+        # Generate milestones
         for i in range(num_milestones):
+            day = (i * days_per_milestone) + 1
+            index = min(i, len(templates["titles"]) - 1)
+            
+            # Customize for specific goal if possible
+            title = templates["titles"][index]
+            if domain == "cooking" and "ramen" in goal_text.lower():
+                ramen_titles = ["Ramen Fundamentals", "Broth Mastery", "Noodle Perfection", "Toppings & Assembly", "Regional Styles", "Personal Signature"]
+                if i < len(ramen_titles):
+                    title = ramen_titles[i]
+            
             milestone = {
                 "id": f"milestone_{i+1}",
-                "day": (i * days_per_milestone) + 1,
-                "title": titles[min(i, len(titles)-1)],
-                "description": f"Focus on {goal_text} fundamentals",
-                "tasks": [
-                    "Research and plan your approach",
-                    "Practice basic skills",
-                    "Apply what you've learned"
-                ],
-                "resources": [
-                    "YouTube tutorials",
-                    "Online courses",
-                    "Community forums"
-                ],
+                "day": day,
+                "title": title,
+                "description": templates["descriptions"][index],
+                "tasks": templates["tasks"][index],
+                "resources": self._get_domain_resources(domain),
                 "completed": False
             }
             milestones.append(milestone)
@@ -285,9 +431,51 @@ Focus on:
         return {
             "domain": domain,
             "estimated_hours_total": timeline_days * 2,
-            "difficulty_level": "Beginner",
+            "difficulty_level": "Intermediate",
             "milestones": milestones
         }
+    
+    def _get_domain_resources(self, domain: str) -> List[str]:
+        """Get domain-specific resources"""
+        domain_resources = {
+            "cooking": [
+                "Joshua Weissman YouTube channel",
+                "Salt Fat Acid Heat by Samin Nosrat", 
+                "Serious Eats website",
+                "Bon Appétit YouTube channel"
+            ],
+            "fitness": [
+                "AthleanX YouTube channel",
+                "MyFitnessPal app for tracking",
+                "StrongLifts 5x5 program",
+                "Starting Strength book by Mark Rippetoe"
+            ],
+            "programming": [
+                "FreeCodeCamp curriculum",
+                "The Odin Project",
+                "Traversy Media YouTube channel",
+                "MDN Web Docs for reference"
+            ],
+            "language": [
+                "Duolingo app for daily practice",
+                "HelloTalk for language exchange",
+                "News in Slow [Language] podcasts",
+                "Anki flashcard app for vocabulary"
+            ],
+            "art": [
+                "Proko YouTube channel",
+                "Drawing on the Right Side of the Brain book",
+                "Procreate app for digital art",
+                "Schoolism online courses"
+            ]
+        }
+        
+        return domain_resources.get(domain, [
+            "Khan Academy for fundamentals",
+            "YouTube channel searches for your topic",
+            "Reddit communities for advice",
+            "Local classes or workshops"
+        ])
 
 # Create a global instance
 roadmap_generator = RoadmapGenerator()
