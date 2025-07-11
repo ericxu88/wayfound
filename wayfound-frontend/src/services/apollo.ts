@@ -1,18 +1,50 @@
 // src/services/apollo.ts
-import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client';
+import { ApolloClient, InMemoryCache, createHttpLink, from } from '@apollo/client';
+import { onError } from '@apollo/client/link/error';
 
-// Replace with your backend URL
+// Error Link for debugging
+const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
+  if (graphQLErrors) {
+    graphQLErrors.forEach(({ message, locations, path }) => {
+      console.error(
+        `❌ GraphQL Error: Message: ${message}, Location: ${locations}, Path: ${path}`
+      );
+    });
+  }
+
+  if (networkError) {
+    console.error(`❌ Network Error: ${networkError}`);
+    console.error('Network Error Details:', networkError);
+  }
+});
+
+// HTTP Link
 const httpLink = createHttpLink({
   uri: 'http://localhost:8000/graphql', // For development
   // uri: 'https://your-production-api.com/graphql', // For production
 });
 
 export const apolloClient = new ApolloClient({
-  link: httpLink,
-  cache: new InMemoryCache(),
+  link: from([errorLink, httpLink]),
+  cache: new InMemoryCache({
+    typePolicies: {
+      Query: {
+        fields: {
+          roadmap: {
+            // Cache roadmaps by ID
+            read(existing, { args }) {
+              console.log('🔍 Cache read for roadmap:', args?.roadmapId);
+              return existing;
+            }
+          }
+        }
+      }
+    }
+  }),
   defaultOptions: {
     watchQuery: {
       errorPolicy: 'all',
+      notifyOnNetworkStatusChange: true,
     },
     query: {
       errorPolicy: 'all',
@@ -95,3 +127,24 @@ export const GET_ROADMAP = gql`
     }
   }
 `;
+
+// Test connection function
+export const testConnection = async () => {
+  try {
+    console.log('🔗 Testing GraphQL connection...');
+    const result = await apolloClient.query({
+      query: gql`
+        query TestConnection {
+          hello
+        }
+      `,
+      fetchPolicy: 'network-only'
+    });
+    
+    console.log('✅ Connection test successful:', result.data);
+    return true;
+  } catch (error) {
+    console.error('❌ Connection test failed:', error);
+    return false;
+  }
+};

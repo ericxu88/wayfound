@@ -9,14 +9,36 @@ import {
   Linking,
   Alert,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@apollo/client';
+import { useQuery, gql } from '@apollo/client';
 import { useRoute, RouteProp } from '@react-navigation/native';
-import { GET_ROADMAP } from '../../services/apollo';
 import { RootStackParamList, Milestone } from '../../types';
 
 type RoadmapDetailRouteProp = RouteProp<RootStackParamList, 'RoadmapDetail'>;
+
+const GET_ROADMAP = gql`
+  query GetRoadmap($roadmapId: String!) {
+    roadmap(roadmapId: $roadmapId) {
+      id
+      goalText
+      domain
+      timelineDays
+      status
+      createdAt
+      milestones {
+        id
+        day
+        title
+        description
+        tasks
+        resources
+        completed
+      }
+    }
+  }
+`;
 
 export default function RoadmapDetailScreen() {
   const [expandedMilestone, setExpandedMilestone] = useState<string | null>(null);
@@ -24,9 +46,17 @@ export default function RoadmapDetailScreen() {
   const route = useRoute<RoadmapDetailRouteProp>();
   const { roadmapId } = route.params;
 
+  console.log('🎯 RoadmapDetailScreen - ID:', roadmapId);
+
   const { data, loading, error, refetch } = useQuery(GET_ROADMAP, {
     variables: { roadmapId },
-    errorPolicy: 'all'
+    errorPolicy: 'all',
+    onCompleted: (data) => {
+      console.log('✅ Roadmap loaded:', data?.roadmap?.goalText);
+    },
+    onError: (error) => {
+      console.error('❌ Query error:', error.message);
+    }
   });
 
   const roadmap = data?.roadmap;
@@ -46,7 +76,6 @@ export default function RoadmapDetailScreen() {
   };
 
   const handleResourcePress = async (resource: string) => {
-    // Try to detect if it's a URL
     if (resource.includes('http') || resource.includes('www.')) {
       try {
         await Linking.openURL(resource.startsWith('http') ? resource : `https://${resource}`);
@@ -54,7 +83,6 @@ export default function RoadmapDetailScreen() {
         Alert.alert('Error', 'Could not open this resource');
       }
     } else {
-      // Show resource in alert for non-URLs
       Alert.alert('Resource', resource);
     }
   };
@@ -86,19 +114,18 @@ export default function RoadmapDetailScreen() {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#3B82F6" />
         <Text style={styles.loadingText}>Loading roadmap...</Text>
       </View>
     );
   }
 
-  if (error || !roadmap) {
+  if (error) {
     return (
       <View style={styles.centerContainer}>
         <Ionicons name="warning-outline" size={48} color="#EF4444" />
         <Text style={styles.errorTitle}>Could not load roadmap</Text>
-        <Text style={styles.errorText}>
-          Please check your connection and try again
-        </Text>
+        <Text style={styles.errorText}>{error.message}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
@@ -106,11 +133,23 @@ export default function RoadmapDetailScreen() {
     );
   }
 
-  const domainColor = getDomainColor(roadmap.domain);
-  const domainIcon = getDomainIcon(roadmap.domain);
+  if (!roadmap) {
+    return (
+      <View style={styles.centerContainer}>
+        <Ionicons name="map-outline" size={48} color="#9CA3AF" />
+        <Text style={styles.errorTitle}>Roadmap not found</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+          <Text style={styles.retryButtonText}>Refresh</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const domainColor = getDomainColor(roadmap.domain || 'general');
+  const domainIcon = getDomainIcon(roadmap.domain || 'general');
   const milestones: Milestone[] = roadmap.milestones || [];
   const completedMilestones = milestones.filter((m: Milestone) => m.completed).length;
-  const progressPercentage = Math.round((completedMilestones / milestones.length) * 100);
+  const progressPercentage = milestones.length > 0 ? Math.round((completedMilestones / milestones.length) * 100) : 0;
 
   return (
     <ScrollView 
@@ -130,7 +169,7 @@ export default function RoadmapDetailScreen() {
               {roadmap.goalText}
             </Text>
             <Text style={styles.headerSubtitle}>
-              {roadmap.domain.toUpperCase()} • {roadmap.timelineDays} days
+              {(roadmap.domain || 'GENERAL').toUpperCase()} • {roadmap.timelineDays} days
             </Text>
           </View>
         </View>
@@ -153,122 +192,128 @@ export default function RoadmapDetailScreen() {
 
       {/* Milestones */}
       <View style={styles.milestonesContainer}>
-        <Text style={styles.sectionTitle}>Learning Milestones</Text>
+        <Text style={styles.sectionTitle}>Learning Milestones ({milestones.length})</Text>
         
-        {milestones
-          .sort((a: Milestone, b: Milestone) => a.day - b.day)
-          .map((milestone: Milestone, index: number) => {
-            const isExpanded = expandedMilestone === milestone.id;
-            const isCompleted = milestone.completed;
-            
-            return (
-              <View key={milestone.id} style={styles.milestoneCard}>
-                <TouchableOpacity
-                  style={styles.milestoneHeader}
-                  onPress={() => toggleMilestone(milestone.id)}
-                >
-                  <View style={styles.milestoneHeaderLeft}>
-                    <View style={[
-                      styles.dayBadge,
-                      isCompleted && styles.dayBadgeCompleted
-                    ]}>
-                      <Text style={[
-                        styles.dayText,
-                        isCompleted && styles.dayTextCompleted
+        {milestones.length === 0 ? (
+          <View style={styles.emptyMilestones}>
+            <Ionicons name="list-outline" size={48} color="#9CA3AF" />
+            <Text style={styles.emptyText}>No milestones found</Text>
+          </View>
+        ) : (
+          milestones
+            .sort((a: Milestone, b: Milestone) => a.day - b.day)
+            .map((milestone: Milestone, index: number) => {
+              const isExpanded = expandedMilestone === milestone.id;
+              const isCompleted = milestone.completed;
+              
+              return (
+                <View key={milestone.id} style={styles.milestoneCard}>
+                  <TouchableOpacity
+                    style={styles.milestoneHeader}
+                    onPress={() => toggleMilestone(milestone.id)}
+                  >
+                    <View style={styles.milestoneHeaderLeft}>
+                      <View style={[
+                        styles.dayBadge,
+                        isCompleted && styles.dayBadgeCompleted
                       ]}>
-                        Day {milestone.day}
-                      </Text>
-                    </View>
-                    <View style={styles.milestoneInfo}>
-                      <Text style={[
-                        styles.milestoneTitle,
-                        isCompleted && styles.milestoneTitleCompleted
-                      ]}>
-                        {milestone.title}
-                      </Text>
-                      <Text style={styles.milestoneDescription} numberOfLines={isExpanded ? undefined : 2}>
-                        {milestone.description}
-                      </Text>
-                    </View>
-                  </View>
-                  
-                  <View style={styles.milestoneHeaderRight}>
-                    {isCompleted && (
-                      <Ionicons name="checkmark-circle" size={24} color="#10B981" />
-                    )}
-                    <Ionicons 
-                      name={isExpanded ? "chevron-up" : "chevron-down"} 
-                      size={20} 
-                      color="#6B7280" 
-                    />
-                  </View>
-                </TouchableOpacity>
-
-                {/* Expanded Content */}
-                {isExpanded && (
-                  <View style={styles.milestoneContent}>
-                    {/* Tasks */}
-                    {milestone.tasks && milestone.tasks.length > 0 && (
-                      <View style={styles.section}>
-                        <Text style={styles.sectionHeader}>
-                          <Ionicons name="list" size={16} color="#374151" /> Tasks
+                        <Text style={[
+                          styles.dayText,
+                          isCompleted && styles.dayTextCompleted
+                        ]}>
+                          Day {milestone.day}
                         </Text>
-                        {milestone.tasks.map((task, taskIndex) => (
-                          <View key={taskIndex} style={styles.taskItem}>
-                            <Ionicons name="ellipse-outline" size={8} color={domainColor} />
-                            <Text style={styles.taskText}>{task}</Text>
-                          </View>
-                        ))}
                       </View>
-                    )}
-
-                    {/* Resources */}
-                    {milestone.resources && milestone.resources.length > 0 && (
-                      <View style={styles.section}>
-                        <Text style={styles.sectionHeader}>
-                          <Ionicons name="library" size={16} color="#374151" /> Resources
+                      <View style={styles.milestoneInfo}>
+                        <Text style={[
+                          styles.milestoneTitle,
+                          isCompleted && styles.milestoneTitleCompleted
+                        ]}>
+                          {milestone.title}
                         </Text>
-                        {milestone.resources.map((resource, resourceIndex) => (
-                          <TouchableOpacity
-                            key={resourceIndex}
-                            style={styles.resourceItem}
-                            onPress={() => handleResourcePress(resource)}
-                          >
-                            <Ionicons name="link" size={16} color={domainColor} />
-                            <Text style={[styles.resourceText, { color: domainColor }]}>
-                              {resource}
-                            </Text>
-                            <Ionicons name="open-outline" size={16} color="#6B7280" />
-                          </TouchableOpacity>
-                        ))}
+                        <Text style={styles.milestoneDescription} numberOfLines={isExpanded ? undefined : 2}>
+                          {milestone.description}
+                        </Text>
                       </View>
-                    )}
-
-                    {/* Complete Button */}
-                    <TouchableOpacity
-                      style={[
-                        styles.completeButton,
-                        isCompleted ? styles.completedButton : { backgroundColor: domainColor }
-                      ]}
-                      onPress={() => {
-                        // TODO: Implement milestone completion
-                        Alert.alert('Coming Soon', 'Milestone completion tracking will be added soon!');
-                      }}
-                    >
+                    </View>
+                    
+                    <View style={styles.milestoneHeaderRight}>
+                      {isCompleted && (
+                        <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                      )}
                       <Ionicons 
-                        name={isCompleted ? "checkmark-circle" : "checkmark"} 
+                        name={isExpanded ? "chevron-up" : "chevron-down"} 
                         size={20} 
-                        color="white" 
+                        color="#6B7280" 
                       />
-                      <Text style={styles.completeButtonText}>
-                        {isCompleted ? 'Completed' : 'Mark Complete'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            );
-          })}
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <View style={styles.milestoneContent}>
+                      {/* Tasks */}
+                      {milestone.tasks && milestone.tasks.length > 0 && (
+                        <View style={styles.section}>
+                          <Text style={styles.sectionHeader}>
+                            <Ionicons name="list" size={16} color="#374151" /> Tasks
+                          </Text>
+                          {milestone.tasks.map((task, taskIndex) => (
+                            <View key={taskIndex} style={styles.taskItem}>
+                              <Ionicons name="ellipse-outline" size={8} color={domainColor} />
+                              <Text style={styles.taskText}>{task}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Resources */}
+                      {milestone.resources && milestone.resources.length > 0 && (
+                        <View style={styles.section}>
+                          <Text style={styles.sectionHeader}>
+                            <Ionicons name="library" size={16} color="#374151" /> Resources
+                          </Text>
+                          {milestone.resources.map((resource, resourceIndex) => (
+                            <TouchableOpacity
+                              key={resourceIndex}
+                              style={styles.resourceItem}
+                              onPress={() => handleResourcePress(resource)}
+                            >
+                              <Ionicons name="link" size={16} color={domainColor} />
+                              <Text style={[styles.resourceText, { color: domainColor }]}>
+                                {resource}
+                              </Text>
+                              <Ionicons name="open-outline" size={16} color="#6B7280" />
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Complete Button */}
+                      <TouchableOpacity
+                        style={[
+                          styles.completeButton,
+                          isCompleted ? styles.completedButton : { backgroundColor: domainColor }
+                        ]}
+                        onPress={() => {
+                          Alert.alert('Coming Soon', 'Milestone completion tracking will be added soon!');
+                        }}
+                      >
+                        <Ionicons 
+                          name={isCompleted ? "checkmark-circle" : "checkmark"} 
+                          size={20} 
+                          color="white" 
+                        />
+                        <Text style={styles.completeButtonText}>
+                          {isCompleted ? 'Completed' : 'Mark Complete'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })
+        )}
       </View>
 
       {/* Stats */}
@@ -307,10 +352,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#F9FAFB',
   },
   loadingText: {
     fontSize: 16,
     color: '#6B7280',
+    marginTop: 16,
   },
   errorTitle: {
     fontSize: 18,
@@ -318,12 +365,14 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     marginTop: 16,
     marginBottom: 8,
+    textAlign: 'center',
   },
   errorText: {
     fontSize: 14,
     color: '#6B7280',
     textAlign: 'center',
     marginBottom: 20,
+    lineHeight: 20,
   },
   retryButton: {
     backgroundColor: '#3B82F6',
@@ -397,6 +446,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1F2937',
     marginBottom: 16,
+  },
+  emptyMilestones: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    marginTop: 12,
   },
   milestoneCard: {
     backgroundColor: 'white',

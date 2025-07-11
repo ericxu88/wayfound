@@ -12,13 +12,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@apollo/client';
 import { useNavigation } from '@react-navigation/native';
+import type { NavigationProp } from '@react-navigation/native';
 import { GET_USER_ROADMAPS } from '../../services/apollo';
-import { Roadmap } from '../../types';
+import { Roadmap, RootStackParamList } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+
+type NavigationProps = NavigationProp<RootStackParamList>;
 
 export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProps>();
   const { user } = useAuth();
   
   const { data, loading, error, refetch } = useQuery(GET_USER_ROADMAPS, {
@@ -71,8 +74,27 @@ export default function DashboardScreen() {
   };
 
   const handleRoadmapPress = (roadmap: Roadmap) => {
-    // Navigate to roadmap detail
-    navigation.navigate('RoadmapDetail', { roadmapId: roadmap.id });
+    console.log('🚀 Dashboard: Roadmap card clicked!');
+    console.log('📋 Roadmap data:', {
+      id: roadmap.id,
+      goalText: roadmap.goalText,
+      domain: roadmap.domain,
+      status: roadmap.status
+    });
+    console.log('📍 About to navigate with roadmapId:', roadmap.id);
+    
+    try {
+      // Switch back to RoadmapDetail now that we know navigation works
+      navigation.navigate('RoadmapDetail', { roadmapId: roadmap.id });
+      console.log('✅ Navigation call completed');
+    } catch (error) {
+      console.error('❌ Navigation error:', error);
+      Alert.alert('Error', 'Could not open roadmap details');
+    }
+  };
+
+  const handleCreateRoadmap = () => {
+    navigation.navigate('CreateRoadmap');
   };
 
   if (loading && roadmaps.length === 0) {
@@ -130,6 +152,7 @@ export default function DashboardScreen() {
                   key={roadmap.id}
                   style={[styles.roadmapCard, { borderLeftColor: domainColor }]}
                   onPress={() => handleRoadmapPress(roadmap)}
+                  activeOpacity={0.7}
                 >
                   <View style={styles.roadmapHeader}>
                     <View style={styles.roadmapIconContainer}>
@@ -208,7 +231,7 @@ export default function DashboardScreen() {
             </Text>
             <TouchableOpacity
               style={styles.createFirstButton}
-              onPress={() => navigation.navigate('CreateRoadmap')}
+              onPress={handleCreateRoadmap}
             >
               <Text style={styles.createFirstButtonText}>Create My First Roadmap</Text>
             </TouchableOpacity>

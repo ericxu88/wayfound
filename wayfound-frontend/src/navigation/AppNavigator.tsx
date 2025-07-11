@@ -10,6 +10,7 @@ import HomeScreen from '../screens/Home/HomeScreen';
 import CreateRoadmapScreen from '../screens/CreateRoadmap/CreateRoadmapScreen';
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
 import RoadmapDetailScreen from '../screens/RoadmapDetail/RoadmapDetailScreen';
+import TestScreen from '../screens/TestScreen';
 
 import { RootStackParamList } from '../types';
 
@@ -69,7 +70,6 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName="Home"
         screenOptions={{
           headerStyle: {
             backgroundColor: '#3B82F6',
@@ -88,7 +88,18 @@ export default function AppNavigator() {
         <Stack.Screen 
           name="RoadmapDetail" 
           component={RoadmapDetailScreen}
-          options={{ title: 'Roadmap Details' }}
+          options={{ 
+            title: 'Roadmap Details',
+            headerShown: true
+          }}
+        />
+        <Stack.Screen 
+          name="TestScreen" 
+          component={TestScreen}
+          options={{ 
+            title: 'Test Screen',
+            headerShown: true
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>
