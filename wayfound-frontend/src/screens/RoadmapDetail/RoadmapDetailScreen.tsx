@@ -10,6 +10,7 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, gql } from '@apollo/client';
@@ -44,15 +45,27 @@ export default function RoadmapDetailScreen() {
   const [expandedMilestone, setExpandedMilestone] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const route = useRoute<RoadmapDetailRouteProp>();
-  const { roadmapId } = route.params;
+  
+  // Add safety check for route params
+  if (!route.params || !route.params.roadmapId) {
+    return (
+      <View style={styles.centerContainer}>
+        <Ionicons name="warning-outline" size={48} color="#EF4444" />
+        <Text style={styles.errorTitle}>Missing Roadmap ID</Text>
+        <Text style={styles.errorText}>Could not find the roadmap identifier</Text>
+      </View>
+    );
+  }
 
-  console.log('🎯 RoadmapDetailScreen - ID:', roadmapId);
+  const { roadmapId } = route.params;
+  console.log('🎯 RoadmapDetailScreen - Loading ID:', roadmapId);
 
   const { data, loading, error, refetch } = useQuery(GET_ROADMAP, {
     variables: { roadmapId },
     errorPolicy: 'all',
+    notifyOnNetworkStatusChange: true,
     onCompleted: (data) => {
-      console.log('✅ Roadmap loaded:', data?.roadmap?.goalText);
+      console.log('✅ Roadmap loaded successfully:', data?.roadmap?.goalText);
     },
     onError: (error) => {
       console.error('❌ Query error:', error.message);
@@ -111,21 +124,27 @@ export default function RoadmapDetailScreen() {
     return icons[domain as keyof typeof icons] || icons.general;
   };
 
+  // Show loading state
   if (loading) {
+    console.log('⏳ Showing loading state for roadmap:', roadmapId);
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
         <Text style={styles.loadingText}>Loading roadmap...</Text>
+        <Text style={styles.debugText}>ID: {roadmapId}</Text>
       </View>
     );
   }
 
+  // Show error state
   if (error) {
+    console.log('❌ Showing error state:', error.message);
     return (
       <View style={styles.centerContainer}>
         <Ionicons name="warning-outline" size={48} color="#EF4444" />
         <Text style={styles.errorTitle}>Could not load roadmap</Text>
         <Text style={styles.errorText}>{error.message}</Text>
+        <Text style={styles.debugText}>ID: {roadmapId}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
@@ -133,11 +152,15 @@ export default function RoadmapDetailScreen() {
     );
   }
 
+  // Show not found state
   if (!roadmap) {
+    console.log('❓ Roadmap not found for ID:', roadmapId);
     return (
       <View style={styles.centerContainer}>
         <Ionicons name="map-outline" size={48} color="#9CA3AF" />
         <Text style={styles.errorTitle}>Roadmap not found</Text>
+        <Text style={styles.errorText}>This roadmap might have been deleted or doesn't exist</Text>
+        <Text style={styles.debugText}>Looking for ID: {roadmapId}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
           <Text style={styles.retryButtonText}>Refresh</Text>
         </TouchableOpacity>
@@ -145,19 +168,28 @@ export default function RoadmapDetailScreen() {
     );
   }
 
+  // Success! We have roadmap data
+  console.log('✅ Rendering roadmap:', roadmap.goalText);
+  
   const domainColor = getDomainColor(roadmap.domain || 'general');
   const domainIcon = getDomainIcon(roadmap.domain || 'general');
   const milestones: Milestone[] = roadmap.milestones || [];
   const completedMilestones = milestones.filter((m: Milestone) => m.completed).length;
   const progressPercentage = milestones.length > 0 ? Math.round((completedMilestones / milestones.length) * 100) : 0;
 
+  // Use different containers for web vs mobile
+  const ScrollContainer = ScrollView; // Always use ScrollView
+  const scrollProps = {
+    style: [styles.container, Platform.OS === 'web' && styles.webScrollFix],
+    contentContainerStyle: styles.scrollContent,
+    showsVerticalScrollIndicator: true,
+    ...(Platform.OS !== 'web' && {
+      refreshControl: <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+    })
+  };
+
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
+    <ScrollContainer {...scrollProps}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: domainColor }]}>
         <View style={styles.headerContent}>
@@ -200,14 +232,14 @@ export default function RoadmapDetailScreen() {
             <Text style={styles.emptyText}>No milestones found</Text>
           </View>
         ) : (
-          milestones
+          [...milestones] // Create a copy of the array before sorting
             .sort((a: Milestone, b: Milestone) => a.day - b.day)
             .map((milestone: Milestone, index: number) => {
               const isExpanded = expandedMilestone === milestone.id;
               const isCompleted = milestone.completed;
               
               return (
-                <View key={milestone.id} style={styles.milestoneCard}>
+                <View key={milestone.id || index} style={styles.milestoneCard}>
                   <TouchableOpacity
                     style={styles.milestoneHeader}
                     onPress={() => toggleMilestone(milestone.id)}
@@ -338,7 +370,7 @@ export default function RoadmapDetailScreen() {
           </View>
         </View>
       </View>
-    </ScrollView>
+    </ScrollContainer>
   );
 }
 
@@ -346,6 +378,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  webScrollFix: {
+    ...(Platform.OS === 'web' && {
+      overflow: 'scroll' as any,
+      height: '100vh' as any,
+    }),
+  },
+  webScrollContainer: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    ...(Platform.OS === 'web' && {
+      overflow: 'scroll' as any,
+      overflowY: 'scroll' as any,
+      WebkitOverflowScrolling: 'touch' as any,
+      height: '100vh' as any,
+    }),
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
   },
   centerContainer: {
     flex: 1,
@@ -374,11 +426,19 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 20,
   },
+  debugText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginTop: 8,
+    fontFamily: 'monospace',
+  },
   retryButton: {
     backgroundColor: '#3B82F6',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
+    marginTop: 16,
   },
   retryButtonText: {
     color: 'white',
