@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from strawberry.fastapi import GraphQLRouter
 import strawberry
-from typing import List
+from typing import List, Optional
 import os
 from dotenv import load_dotenv
 
@@ -48,6 +48,7 @@ class TestUserInput:
 class CreateRoadmapInput:
     goal_text: str
     timeline_days: int = 30
+    survey_data: Optional[strawberry.scalars.JSON] = None
 
 # Helper functions for roadmap generation
 def classify_domain(goal_text: str) -> str:
@@ -66,104 +67,6 @@ def classify_domain(goal_text: str) -> str:
         return "art"
     else:
         return "general"
-
-def generate_mock_milestones(goal_text: str, timeline_days: int) -> List[dict]:
-    """Generate mock milestones based on goal and timeline"""
-    domain = classify_domain(goal_text)
-    
-    # Calculate number of milestones (roughly one per week)
-    num_milestones = max(2, min(8, timeline_days // 7))
-    days_per_milestone = timeline_days // num_milestones
-    
-    milestones = []
-    
-    for i in range(num_milestones):
-        day = (i * days_per_milestone) + 1
-        milestone = create_milestone_for_domain(domain, i + 1, day, goal_text, num_milestones)
-        milestones.append(milestone)
-    
-    return milestones
-
-def create_milestone_for_domain(domain: str, milestone_num: int, day: int, goal_text: str, total_milestones: int) -> dict:
-    """Create domain-specific milestones"""
-    
-    if domain == "cooking":
-        titles = ["Kitchen Setup & Basics", "Fundamental Techniques", "Recipe Practice", "Advanced Skills"]
-        descriptions = [
-            "Set up your kitchen and learn basic knife skills",
-            "Master essential cooking methods and techniques", 
-            "Practice with simple recipes and build confidence",
-            "Tackle complex recipes and develop your style"
-        ]
-        tasks = [
-            ["Organize kitchen tools", "Learn knife safety", "Practice basic cuts"],
-            ["Learn sautéing and boiling", "Practice seasoning", "Master timing"],
-            ["Cook 3 simple recipes", "Document what you learn", "Adjust recipes to taste"],
-            ["Try complex techniques", "Create your own variations", "Share with friends"]
-        ]
-        
-    elif domain == "fitness":
-        titles = ["Foundation & Form", "Building Strength", "Progression", "Mastery"]
-        descriptions = [
-            "Learn proper form and establish workout routine",
-            "Focus on progressive overload and consistency",
-            "Advanced techniques and goal-specific training", 
-            "Peak performance and long-term maintenance"
-        ]
-        tasks = [
-            ["Learn basic exercises", "Establish workout schedule", "Focus on form"],
-            ["Increase weights gradually", "Track your progress", "Maintain consistency"],
-            ["Add advanced exercises", "Optimize nutrition", "Monitor recovery"],
-            ["Achieve target goals", "Plan long-term strategy", "Help others"]
-        ]
-        
-    elif domain == "programming":
-        titles = ["Development Environment", "Core Concepts", "Building Projects", "Advanced Skills"]
-        descriptions = [
-            "Set up tools and learn programming fundamentals",
-            "Master key programming concepts and syntax",
-            "Build real projects to apply your knowledge",
-            "Learn advanced patterns and best practices"
-        ]
-        tasks = [
-            ["Install development tools", "Write your first program", "Learn basic syntax"],
-            ["Understand variables and functions", "Practice with exercises", "Debug simple errors"],
-            ["Build a small project", "Use version control", "Add features iteratively"],
-            ["Learn design patterns", "Optimize performance", "Contribute to open source"]
-        ]
-        
-    else:  # general
-        titles = ["Getting Started", "Building Foundation", "Skill Development", "Mastery & Growth"]
-        descriptions = [
-            f"Begin your journey with {goal_text}",
-            "Build fundamental knowledge and skills",
-            "Develop intermediate capabilities",
-            "Achieve mastery and continue growing"
-        ]
-        tasks = [
-            ["Research your goal", "Gather necessary resources", "Create learning plan"],
-            ["Study fundamentals", "Practice basic skills", "Join communities"],
-            ["Apply knowledge practically", "Seek feedback", "Overcome challenges"],
-            ["Achieve your goal", "Teach others", "Set new challenges"]
-        ]
-    
-    # Select appropriate milestone based on progress
-    index = min(milestone_num - 1, len(titles) - 1)
-    
-    return {
-        "id": f"milestone_{milestone_num}",
-        "day": day,
-        "title": titles[index],
-        "description": descriptions[index],
-        "tasks": tasks[index],
-        "resources": [
-            "YouTube tutorials",
-            "Online courses", 
-            "Community forums",
-            "Practice exercises"
-        ],
-        "completed": False
-    }
 
 def convert_db_roadmap_to_graphql(db_roadmap) -> Roadmap:
     """Convert database roadmap to GraphQL type"""
@@ -301,7 +204,7 @@ class Mutation:
     
     @strawberry.mutation
     def create_roadmap(self, user_id: str, input_data: CreateRoadmapInput) -> Roadmap:
-        """Create a new roadmap with AI-generated milestones"""
+        """Create a new roadmap with AI-generated milestones using survey data"""
         try:
             from app.database import SessionLocal
             from app.models import Roadmap as RoadmapModel, User as UserModel
@@ -314,11 +217,20 @@ class Mutation:
                 if not user:
                     raise Exception(f"User {user_id} not found")
                 
-                # Generate AI roadmap
+                # Extract survey data
+                survey_data = None
+                if input_data.survey_data:
+                    survey_data = dict(input_data.survey_data)
+                    print(f"📋 Using survey data: {survey_data}")
+                
+                # Generate AI roadmap with survey data
                 print(f"🤖 Generating AI roadmap for: {input_data.goal_text}")
+                print(f"📊 Survey preferences: {survey_data}")
+                
                 ai_roadmap = roadmap_generator.generate_roadmap(
                     goal_text=input_data.goal_text,
-                    timeline_days=input_data.timeline_days
+                    timeline_days=input_data.timeline_days,
+                    survey_data=survey_data
                 )
                 
                 # Create roadmap in database
@@ -336,6 +248,9 @@ class Mutation:
                 db.refresh(db_roadmap)
                 
                 print(f"✅ AI roadmap created with {len(ai_roadmap['milestones'])} milestones")
+                print(f"📈 Difficulty: {ai_roadmap.get('difficulty_level', 'Unknown')}")
+                print(f"⏱️  Estimated hours: {ai_roadmap.get('estimated_hours_total', 'Unknown')}")
+                
                 return convert_db_roadmap_to_graphql(db_roadmap)
             finally:
                 db.close()
@@ -371,12 +286,13 @@ async def lifespan(app: FastAPI):
         print("⚠️  OpenAI API key not found - using fallback generation")
         print("   Add OPENAI_API_KEY=sk-your-key to your .env file for AI features")
     
-    # Print schema info (simplified)
+    # Print schema info
     print("GraphQL schema loaded successfully! ✅")
     ai_status = "with AI!" if api_key else "(fallback mode)"
     print(f"🤖 Roadmap generation enabled {ai_status}")
+    print("📋 Survey-based personalization enabled!")
     print("Available queries: hello, testUsers, userCount, roadmap, userRoadmaps")
-    print("Available mutations: createUser, createRoadmap")
+    print("Available mutations: createUser, createRoadmap (with survey data)")
     
     yield
     # Shutdown
@@ -385,8 +301,8 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Wayfound API",
-    description="AI-powered personalized learning roadmaps",
-    version="1.0.0",
+    description="AI-powered personalized learning roadmaps with survey-based personalization",
+    version="1.1.0",
     lifespan=lifespan
 )
 
@@ -405,11 +321,11 @@ app.include_router(graphql_app, prefix="/graphql")
 
 @app.get("/")
 async def root():
-    return {"message": "Wayfound API is running! 🚀"}
+    return {"message": "Wayfound API is running! 🚀", "features": ["AI Roadmaps", "Survey Personalization"]}
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "database": "connected"}
+    return {"status": "healthy", "database": "connected", "ai": "enabled" if os.getenv("OPENAI_API_KEY") else "fallback"}
 
 if __name__ == "__main__":
     import uvicorn

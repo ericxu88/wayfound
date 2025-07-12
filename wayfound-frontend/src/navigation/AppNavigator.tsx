@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 // Import screens
 import HomeScreen from '../screens/Home/HomeScreen';
 import CreateRoadmapScreen from '../screens/CreateRoadmap/CreateRoadmapScreen';
+import SurveyScreen from '../screens/Survey/SurveyScreen';
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
 import RoadmapDetailScreen from '../screens/RoadmapDetail/RoadmapDetailScreen';
 import TestScreen from '../screens/TestScreen';
@@ -84,6 +85,14 @@ export default function AppNavigator() {
           name="Home" 
           component={TabNavigator}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="Survey" 
+          component={SurveyScreen}
+          options={{ 
+            title: 'Personalize Your Roadmap',
+            headerShown: false // We'll use custom header in SurveyScreen
+          }}
         />
         <Stack.Screen 
           name="RoadmapDetail" 

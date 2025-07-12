@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useMutation } from '@apollo/client';
 import { useNavigation } from '@react-navigation/native';
-import { CREATE_ROADMAP, GET_USER_ROADMAPS } from '../../services/apollo';
-import { useAuth } from '../../contexts/AuthContext';
+import type { NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../../types';
+
+type NavigationProps = NavigationProp<RootStackParamList>;
 
 const EXAMPLE_GOALS = [
   {
@@ -50,95 +50,20 @@ const EXAMPLE_GOALS = [
 
 export default function CreateRoadmapScreen() {
   const [goalText, setGoalText] = useState('');
-  const [timelineDays, setTimelineDays] = useState('30');
-  const [isLoading, setIsLoading] = useState(false);
-  const navigation = useNavigation();
-  const { user } = useAuth();
+  const navigation = useNavigation<NavigationProps>();
 
-  const [createRoadmap] = useMutation(CREATE_ROADMAP, {
-    // Refetch user roadmaps after creating a new one
-    refetchQueries: [
-      {
-        query: GET_USER_ROADMAPS,
-        variables: { userId: user?.id }
-      }
-    ]
-  });
-
-  const handleCreateRoadmap = async () => {
+  const handleCreateRoadmap = () => {
     console.log('🚀 Create roadmap button clicked!');
     console.log('Goal text:', goalText);
-    console.log('Timeline days:', timelineDays);
-    console.log('Current user:', user);
-    
-    if (!user) {
-      Alert.alert('Error', 'You must be logged in to create a roadmap');
-      return;
-    }
     
     if (!goalText.trim()) {
-      Alert.alert('Error', 'Please enter your learning goal');
+      // Could add an alert here, but let's keep it simple
       return;
     }
 
-    if (!timelineDays || parseInt(timelineDays) < 1) {
-      Alert.alert('Error', 'Please enter a valid timeline');
-      return;
-    }
-
-    setIsLoading(true);
-    
-    try {
-      console.log('🤖 Creating roadmap for user:', user.id);
-
-      const result = await createRoadmap({
-        variables: {
-          userId: user.id,
-          inputData: {
-            goalText: goalText.trim(),
-            timelineDays: parseInt(timelineDays)
-          }
-        }
-      });
-
-      console.log('✅ GraphQL response:', result);
-
-      if (result.data?.createRoadmap) {
-        const roadmap = result.data.createRoadmap;
-        Alert.alert(
-          'Success! 🎉', 
-          `Your roadmap "${roadmap.goalText}" has been created!\n\nDomain: ${roadmap.domain}\nMilestones: ${roadmap.milestones?.length || 0}`,
-          [
-            {
-              text: 'View Dashboard',
-              onPress: () => navigation.navigate('Dashboard')
-            },
-            {
-              text: 'OK',
-              style: 'default'
-            }
-          ]
-        );
-        
-        // Clear form
-        setGoalText('');
-        setTimelineDays('30');
-      }
-    } catch (error: any) {
-      console.error('❌ Error creating roadmap:', error);
-      
-      const errorMessage = error?.graphQLErrors?.[0]?.message || 
-                          error?.message || 
-                          error?.toString() || 
-                          'Unknown error';
-      
-      Alert.alert(
-        'Error', 
-        `Failed to create roadmap: ${errorMessage}`
-      );
-    } finally {
-      setIsLoading(false);
-    }
+    // Navigate to survey instead of creating roadmap directly
+    console.log('📋 Navigating to survey with goal:', goalText);
+    navigation.navigate('Survey', { goalText: goalText.trim() });
   };
 
   const handleExampleGoal = (example: string) => {
@@ -170,21 +95,6 @@ export default function CreateRoadmapScreen() {
           />
         </View>
 
-        {/* Timeline Input */}
-        <View style={styles.inputSection}>
-          <Text style={styles.label}>Timeline (days)</Text>
-          <TextInput
-            style={styles.timelineInput}
-            placeholder="30"
-            value={timelineDays}
-            onChangeText={setTimelineDays}
-            keyboardType="numeric"
-          />
-          <Text style={styles.helperText}>
-            How many days do you want to spend learning this skill?
-          </Text>
-        </View>
-
         {/* Example Goals */}
         <View style={styles.examplesSection}>
           <Text style={styles.examplesTitle}>Or try these examples:</Text>
@@ -210,23 +120,33 @@ export default function CreateRoadmapScreen() {
         <TouchableOpacity
           style={[
             styles.createButton,
-            (!goalText.trim() || isLoading) && styles.createButtonDisabled
+            !goalText.trim() && styles.createButtonDisabled
           ]}
           onPress={handleCreateRoadmap}
-          disabled={!goalText.trim() || isLoading}
+          disabled={!goalText.trim()}
         >
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.createButtonText}>Creating your roadmap...</Text>
-              <Text style={styles.loadingSubtext}>🤖 AI is working its magic</Text>
-            </View>
-          ) : (
-            <View style={styles.buttonContent}>
-              <Text style={styles.createButtonText}>Create My Roadmap</Text>
-              <Ionicons name="arrow-forward" size={20} color="white" />
-            </View>
-          )}
+          <View style={styles.buttonContent}>
+            <Text style={styles.createButtonText}>Continue to Personalization</Text>
+            <Ionicons name="arrow-forward" size={20} color="white" />
+          </View>
         </TouchableOpacity>
+
+        {/* Info Section */}
+        <View style={styles.infoSection}>
+          <Text style={styles.infoTitle}>What happens next?</Text>
+          <View style={styles.infoStep}>
+            <Ionicons name="clipboard-outline" size={20} color="#3B82F6" />
+            <Text style={styles.infoText}>Answer a few questions about your preferences</Text>
+          </View>
+          <View style={styles.infoStep}>
+            <Ionicons name="sparkles-outline" size={20} color="#3B82F6" />
+            <Text style={styles.infoText}>AI creates a personalized roadmap just for you</Text>
+          </View>
+          <View style={styles.infoStep}>
+            <Ionicons name="rocket-outline" size={20} color="#3B82F6" />
+            <Text style={styles.infoText}>Start learning with your custom plan</Text>
+          </View>
+        </View>
 
         {/* Tips */}
         <View style={styles.tipsSection}>
@@ -280,20 +200,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 100,
     textAlignVertical: 'top',
-  },
-  timelineInput: {
-    backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    width: 100,
-  },
-  helperText: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
   },
   examplesSection: {
     marginBottom: 32,
@@ -349,30 +255,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  loadingContainer: {
-    alignItems: 'center',
+  infoSection: {
+    backgroundColor: '#EFF6FF',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 24,
   },
-  loadingSubtext: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 12,
-    marginTop: 4,
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E40AF',
+    marginBottom: 16,
+  },
+  infoStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#1E40AF',
+    flex: 1,
   },
   tipsSection: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F0FDF4',
     padding: 16,
     borderRadius: 12,
     borderLeftWidth: 4,
-    borderLeftColor: '#3B82F6',
+    borderLeftColor: '#10B981',
   },
   tipsTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1E40AF',
+    color: '#065F46',
     marginBottom: 8,
   },
   tip: {
     fontSize: 14,
-    color: '#1E40AF',
+    color: '#065F46',
     marginBottom: 4,
   },
 });

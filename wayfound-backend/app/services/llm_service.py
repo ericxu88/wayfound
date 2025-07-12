@@ -83,27 +83,28 @@ class RoadmapGenerator:
             return "general"
     
     def generate_roadmap(self, goal_text: str, timeline_days: int, survey_data: Dict = None) -> Dict:
-        """Generate personalized roadmap using OpenAI"""
+        """Generate personalized roadmap using OpenAI with survey data"""
         
         # Check if OpenAI client is available
         if not self.client:
             print("🔄 OpenAI not available, using fallback generation")
             domain = self._classify_domain_simple(goal_text)
-            return self._generate_fallback_roadmap(goal_text, timeline_days, domain)
+            return self._generate_fallback_roadmap(goal_text, timeline_days, domain, survey_data)
         
         # Classify domain first
         domain = self.classify_domain(goal_text)
         
-        # Build the prompt
+        # Build the prompt with survey data
         prompt = self._build_roadmap_prompt(goal_text, timeline_days, domain, survey_data)
         
         try:
-            print(f"🔄 Calling OpenAI GPT-4 for roadmap generation...")
+            print(f"🔄 Calling OpenAI GPT-3.5 for roadmap generation...")
+            print(f"📋 Survey data: {survey_data}")
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Use GPT-3.5 for better compatibility
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=3000,
+                max_tokens=3500,  # Increased for more detailed responses
                 temperature=0.7
             )
             
@@ -121,29 +122,46 @@ class RoadmapGenerator:
         except json.JSONDecodeError as e:
             print(f"❌ JSON parsing error: {e}")
             print(f"🔍 Raw response: {response_content[:500]}...")
-            return self._generate_fallback_roadmap(goal_text, timeline_days, domain)
+            return self._generate_fallback_roadmap(goal_text, timeline_days, domain, survey_data)
         except Exception as e:
             print(f"❌ Error generating roadmap: {e}")
-            print(f"🔄 Falling back to mock generation")
-            # Fall back to mock generation if AI fails
-            return self._generate_fallback_roadmap(goal_text, timeline_days, domain)
+            print(f"🔄 Falling back to smart generation")
+            return self._generate_fallback_roadmap(goal_text, timeline_days, domain, survey_data)
     
     def _build_roadmap_prompt(self, goal_text: str, timeline_days: int, domain: str, survey_data: Dict = None) -> str:
-        """Build the prompt for roadmap generation"""
+        """Build the prompt for roadmap generation with survey data"""
         
-        # Base context
+        # Build user context from survey data
         user_context = ""
         if survey_data:
+            skill_level = survey_data.get('skillLevel', 'Beginner')
+            time_per_day = survey_data.get('timePerDay', '30 minutes')
+            learning_style = survey_data.get('learningStyle', 'Mixed')
+            timeline_pref = survey_data.get('timelinePreference', 'Flexible')
+            
             user_context = f"""
-User Context:
-- Skill Level: {survey_data.get('skill_level', 'Beginner')}
-- Available Time: {survey_data.get('time_per_day', '30 minutes')} per day
-- Learning Style: {survey_data.get('learning_style', 'Mixed')}
-- Timeline Preference: {survey_data.get('timeline_preference', 'Flexible')}
+User Profile:
+- Skill Level: {skill_level}
+- Available Time: {time_per_day} per day
+- Learning Style: {learning_style}
+- Timeline Preference: {timeline_pref}
+- Estimated total hours available: {self._calculate_total_hours(time_per_day, timeline_days)}
+
+IMPORTANT: Adapt the roadmap intensity and content based on these preferences:
+- For "Complete Beginner": Start with absolute basics, explain everything
+- For "Advanced": Skip basics, focus on nuanced techniques and mastery
+- For "15 minutes" daily: Create micro-learning sessions with quick wins
+- For "2+ hours" daily: Include deep-dive sessions and complex projects
+- For "Watch Videos" preference: Prioritize video resources and visual learning
+- For "Hands-on Practice" preference: Focus on projects and practical exercises
 """
         
         # Domain-specific instructions
         domain_instructions = self._get_domain_instructions(domain)
+        
+        # Adjust milestone count based on timeline and daily time
+        time_per_day = survey_data.get('timePerDay', '30 minutes') if survey_data else '30 minutes'
+        milestone_count = self._calculate_milestone_count(timeline_days, time_per_day)
         
         prompt = f"""
 Create a detailed {timeline_days}-day learning roadmap for: "{goal_text}"
@@ -154,8 +172,8 @@ Domain: {domain}
 {domain_instructions}
 
 Requirements:
-1. Create {max(2, min(8, timeline_days // 7))} milestones spread across {timeline_days} days
-2. Each milestone should be achievable and build on previous ones
+1. Create {milestone_count} milestones spread strategically across {timeline_days} days
+2. Each milestone should build progressively on previous ones
 3. Include specific, actionable tasks for each milestone
 4. **CRITICAL: Provide SPECIFIC, HIGH-QUALITY resources for each milestone:**
    - Exact YouTube channel names (e.g., "Joshua Weissman", "Bon Appétit")
@@ -165,7 +183,8 @@ Requirements:
    - Real blogs, articles, or documentation
    - NO generic phrases like "YouTube tutorials" or "online courses"
 
-5. Make it practical and realistic for the given timeline
+5. Make it practical and realistic for the given timeline and user preferences
+6. Adapt difficulty and pacing based on skill level and available time
 
 Example of good resources:
 - "Joshua Weissman's Ramen series on YouTube"
@@ -194,6 +213,29 @@ Ensure the JSON is valid and complete. Focus on providing REAL, SPECIFIC resourc
 """
         
         return prompt
+    
+    def _calculate_total_hours(self, time_per_day: str, timeline_days: int) -> int:
+        """Calculate total available hours based on daily commitment"""
+        time_mapping = {
+            '15 minutes': 0.25,
+            '30 minutes': 0.5,
+            '1 hour': 1.0,
+            '2+ hours': 2.5
+        }
+        daily_hours = time_mapping.get(time_per_day, 0.5)
+        return int(daily_hours * timeline_days)
+    
+    def _calculate_milestone_count(self, timeline_days: int, time_per_day: str) -> int:
+        """Calculate appropriate number of milestones based on timeline and daily time"""
+        if time_per_day == '15 minutes':
+            # More frequent, smaller milestones for short sessions
+            return max(3, min(8, timeline_days // 4))
+        elif time_per_day == '2+ hours':
+            # Fewer, more substantial milestones for longer sessions
+            return max(2, min(6, timeline_days // 10))
+        else:
+            # Standard milestone cadence
+            return max(3, min(7, timeline_days // 7))
     
     def _get_domain_instructions(self, domain: str) -> str:
         """Get domain-specific instructions for roadmap generation"""
@@ -310,100 +352,24 @@ Always suggest SPECIFIC, real resources rather than generic ones.
         
         return validated
     
-    def _generate_fallback_roadmap(self, goal_text: str, timeline_days: int, domain: str) -> Dict:
-        """Generate a smart fallback roadmap if AI fails"""
+    def _generate_fallback_roadmap(self, goal_text: str, timeline_days: int, domain: str, survey_data: Dict = None) -> Dict:
+        """Generate a smart fallback roadmap if AI fails, incorporating survey data"""
         
-        print(f"🔄 Generating smart fallback for domain: {domain}")
+        print(f"🔄 Generating smart fallback for domain: {domain} with survey data")
         
-        num_milestones = max(2, min(6, timeline_days // 7))
+        # Adapt milestone count based on survey data
+        if survey_data:
+            time_per_day = survey_data.get('timePerDay', '30 minutes')
+            num_milestones = self._calculate_milestone_count(timeline_days, time_per_day)
+        else:
+            num_milestones = max(2, min(6, timeline_days // 7))
+            
         days_per_milestone = timeline_days // num_milestones
         
         milestones = []
         
-        # Domain-specific milestone templates
-        domain_templates = {
-            "cooking": {
-                "titles": ["Kitchen Setup & Basics", "Fundamental Techniques", "Recipe Mastery", "Advanced Skills", "Flavor Perfection", "Presentation & Style"],
-                "descriptions": [
-                    "Set up your kitchen workspace and learn essential knife skills and safety",
-                    "Master fundamental cooking techniques like sautéing, boiling, and seasoning",
-                    "Practice core recipes and build confidence with timing and ingredients",
-                    "Learn advanced techniques and tackle more complex preparations",
-                    "Develop your palate and perfect flavor balancing",
-                    "Focus on plating, presentation, and developing your personal style"
-                ],
-                "tasks": [
-                    ["Organize kitchen tools and workspace", "Learn basic knife cuts and safety", "Practice proper posture and grip", "Stock essential ingredients"],
-                    ["Master sautéing and heat control", "Practice seasoning techniques", "Learn timing for multiple dishes", "Understand ingredient interactions"],
-                    ["Cook 3-5 foundational recipes", "Document cooking notes and adjustments", "Practice mise en place", "Taste and adjust seasoning"],
-                    ["Try complex multi-step recipes", "Learn sauce-making techniques", "Practice temperature control", "Experiment with ingredient substitutions"],
-                    ["Develop signature flavor combinations", "Practice balancing sweet, salty, umami", "Learn wine/sake pairing basics", "Create recipe variations"],
-                    ["Master plating techniques", "Practice food photography", "Develop presentation style", "Share dishes with others for feedback"]
-                ]
-            },
-            "fitness": {
-                "titles": ["Foundation & Assessment", "Form & Technique", "Building Strength", "Progressive Training", "Performance Optimization", "Long-term Success"],
-                "descriptions": [
-                    "Assess current fitness level and establish proper foundation",
-                    "Learn correct form for all exercises and movement patterns", 
-                    "Focus on building base strength with progressive overload",
-                    "Advance to intermediate techniques and specialized training",
-                    "Optimize performance through advanced programming",
-                    "Develop sustainable long-term fitness habits"
-                ],
-                "tasks": [
-                    ["Complete fitness assessment", "Set realistic goals", "Learn basic movements", "Establish workout schedule"],
-                    ["Master bodyweight exercises", "Learn proper lifting form", "Practice mobility routines", "Focus on breathing techniques"],
-                    ["Implement progressive overload", "Track weights and reps", "Maintain consistent schedule", "Focus on compound movements"],
-                    ["Add advanced exercises", "Implement periodization", "Optimize nutrition timing", "Monitor recovery metrics"],
-                    ["Fine-tune programming", "Track performance metrics", "Optimize sleep and recovery", "Consider specialized coaching"],
-                    ["Develop maintenance routine", "Set new challenges", "Help others with fitness", "Celebrate achievements"]
-                ]
-            },
-            "programming": {
-                "titles": ["Environment Setup", "Programming Fundamentals", "Project Building", "Advanced Concepts", "Best Practices", "Professional Development"],
-                "descriptions": [
-                    "Set up development environment and learn basic programming concepts",
-                    "Master fundamental programming concepts and syntax",
-                    "Build real projects to apply your knowledge practically",
-                    "Learn advanced programming patterns and concepts",
-                    "Adopt industry best practices and clean code principles",
-                    "Develop professional skills and contribute to the community"
-                ],
-                "tasks": [
-                    ["Install development tools and IDE", "Learn version control basics", "Write your first 'Hello World'", "Understand basic syntax"],
-                    ["Master variables and data types", "Learn control flow and loops", "Practice with functions", "Debug simple programs"],
-                    ["Build a small personal project", "Learn to break down problems", "Practice iterative development", "Add features gradually"],
-                    ["Learn object-oriented programming", "Understand design patterns", "Practice with APIs", "Work with databases"],
-                    ["Learn code review practices", "Write unit tests", "Follow style guides", "Optimize for performance"],
-                    ["Contribute to open source", "Build a portfolio", "Network with developers", "Continue learning new technologies"]
-                ]
-            }
-        }
-        
-        # Get templates for domain or use general
-        if domain in domain_templates:
-            templates = domain_templates[domain]
-        else:
-            templates = {
-                "titles": ["Getting Started", "Building Foundation", "Skill Development", "Advanced Practice", "Mastery Focus", "Continuous Growth"],
-                "descriptions": [
-                    f"Begin your journey with {goal_text} by establishing fundamentals",
-                    "Build a solid foundation of knowledge and basic skills",
-                    "Develop intermediate capabilities through focused practice",
-                    "Apply advanced techniques and tackle challenging projects",
-                    "Refine your skills and develop personal mastery",
-                    "Continue growing and helping others in your journey"
-                ],
-                "tasks": [
-                    ["Research your goal thoroughly", "Gather necessary resources", "Create a detailed learning plan", "Set up your workspace"],
-                    ["Study fundamental concepts", "Practice basic skills daily", "Join relevant communities", "Find mentors or guides"],
-                    ["Apply knowledge practically", "Seek feedback regularly", "Overcome initial challenges", "Build confidence"],
-                    ["Take on complex challenges", "Experiment with variations", "Develop problem-solving skills", "Share your progress"],
-                    ["Perfect your technique", "Develop signature style", "Teach others your skills", "Set higher standards"],
-                    ["Pursue advanced opportunities", "Mentor newcomers", "Continue learning", "Set new challenges"]
-                ]
-            }
+        # Get domain-specific templates adapted for survey data
+        templates = self._get_domain_templates(domain, survey_data)
         
         # Generate milestones
         for i in range(num_milestones):
@@ -428,12 +394,122 @@ Always suggest SPECIFIC, real resources rather than generic ones.
             }
             milestones.append(milestone)
         
+        # Determine difficulty level based on survey data
+        difficulty_level = "Intermediate"
+        if survey_data and survey_data.get('skillLevel'):
+            skill_mapping = {
+                'Complete Beginner': 'Beginner',
+                'Some Experience': 'Beginner',
+                'Intermediate': 'Intermediate',
+                'Advanced': 'Advanced'
+            }
+            difficulty_level = skill_mapping.get(survey_data['skillLevel'], 'Intermediate')
+        
         return {
             "domain": domain,
-            "estimated_hours_total": timeline_days * 2,
-            "difficulty_level": "Intermediate",
+            "estimated_hours_total": self._calculate_total_hours(
+                survey_data.get('timePerDay', '30 minutes') if survey_data else '30 minutes',
+                timeline_days
+            ),
+            "difficulty_level": difficulty_level,
             "milestones": milestones
         }
+    
+    def _get_domain_templates(self, domain: str, survey_data: Dict = None):
+        """Get domain-specific milestone templates, adapted for survey data"""
+        
+        # Adapt complexity based on skill level
+        skill_level = survey_data.get('skillLevel', 'Some Experience') if survey_data else 'Some Experience'
+        is_beginner = skill_level == 'Complete Beginner'
+        is_advanced = skill_level == 'Advanced'
+        
+        domain_templates = {
+            "cooking": {
+                "titles": [
+                    "Kitchen Fundamentals" if is_beginner else ("Advanced Techniques" if is_advanced else "Kitchen Setup & Basics"),
+                    "Essential Cooking Methods" if is_beginner else ("Complex Flavor Building" if is_advanced else "Fundamental Techniques"),
+                    "Recipe Practice" if is_beginner else ("Culinary Innovation" if is_advanced else "Recipe Mastery"),
+                    "Advanced Skills" if not is_advanced else "Mastery & Teaching Others"
+                ],
+                "descriptions": [
+                    "Learn absolute kitchen basics and safety" if is_beginner else ("Master advanced culinary techniques" if is_advanced else "Set up your kitchen workspace and learn essential knife skills"),
+                    "Master basic cooking methods step by step" if is_beginner else ("Develop complex flavor profiles and techniques" if is_advanced else "Master fundamental cooking techniques like sautéing and seasoning"),
+                    "Practice with very simple recipes" if is_beginner else ("Create innovative dishes and techniques" if is_advanced else "Practice core recipes and build confidence"),
+                    "Learn intermediate techniques" if is_beginner else ("Teach others and perfect your craft" if is_advanced else "Learn advanced techniques and develop your style")
+                ],
+                "tasks": [
+                    ["Learn kitchen safety rules", "Identify basic tools", "Practice holding a knife safely", "Understand ingredient storage"] if is_beginner else 
+                    (["Master knife techniques", "Understand advanced equipment", "Learn professional kitchen organization", "Study ingredient science"] if is_advanced else
+                     ["Organize kitchen tools and workspace", "Learn basic knife cuts and safety", "Practice proper posture and grip", "Stock essential ingredients"]),
+                    
+                    ["Learn to boil water safely", "Practice basic seasoning", "Understand heat levels", "Try simple sautéing"] if is_beginner else
+                    (["Master sauce-making", "Perfect temperature control", "Understand flavor chemistry", "Create signature techniques"] if is_advanced else
+                     ["Master sautéing and heat control", "Practice seasoning techniques", "Learn timing for multiple dishes", "Understand ingredient interactions"]),
+                     
+                    ["Cook 1-2 very simple recipes", "Focus on following instructions exactly", "Taste and learn", "Document what you tried"] if is_beginner else
+                    (["Develop original recipes", "Master complex multi-course meals", "Innovate with ingredients", "Perfect presentation techniques"] if is_advanced else
+                     ["Cook 3-5 foundational recipes", "Document cooking notes and adjustments", "Practice mise en place", "Taste and adjust seasoning"])
+                ]
+            },
+            "fitness": {
+                "titles": [
+                    "Fitness Basics & Safety" if is_beginner else ("Performance Optimization" if is_advanced else "Foundation & Assessment"),
+                    "Basic Movement Patterns" if is_beginner else ("Advanced Training Methods" if is_advanced else "Form & Technique"),
+                    "Simple Exercise Routine" if is_beginner else ("Competition Preparation" if is_advanced else "Building Strength"),
+                    "Building Consistency" if is_beginner else ("Coaching Others" if is_advanced else "Progressive Training")
+                ],
+                "descriptions": [
+                    "Learn basic fitness concepts and safety" if is_beginner else ("Optimize performance for competition" if is_advanced else "Assess current fitness level and establish foundation"),
+                    "Master basic bodyweight movements" if is_beginner else ("Master advanced training techniques" if is_advanced else "Learn correct form for all exercises"),
+                    "Establish a simple, consistent routine" if is_beginner else ("Prepare for competitive events" if is_advanced else "Focus on building base strength"),
+                    "Build the habit of regular exercise" if is_beginner else ("Learn to coach and teach others" if is_advanced else "Advance to intermediate techniques")
+                ],
+                "tasks": [
+                    ["Learn proper posture", "Understand basic anatomy", "Practice breathing techniques", "Learn warm-up basics"] if is_beginner else
+                    (["Analyze biomechanics", "Optimize training periodization", "Master recovery protocols", "Study sports science"] if is_advanced else
+                     ["Complete fitness assessment", "Set realistic goals", "Learn basic movements", "Establish workout schedule"])
+                ]
+            },
+            "programming": {
+                "titles": [
+                    "Computer Basics" if is_beginner else ("System Architecture" if is_advanced else "Environment Setup"),
+                    "Programming Fundamentals" if is_beginner else ("Advanced Algorithms" if is_advanced else "Programming Fundamentals"),
+                    "First Simple Project" if is_beginner else ("Complex System Design" if is_advanced else "Project Building"),
+                    "Learning to Debug" if is_beginner else ("Open Source Contribution" if is_advanced else "Advanced Concepts")
+                ],
+                "descriptions": [
+                    "Learn basic computer operation and concepts" if is_beginner else ("Master system design and architecture" if is_advanced else "Set up development environment and learn basics"),
+                    "Understand what programming is and basic concepts" if is_beginner else ("Implement complex algorithms and data structures" if is_advanced else "Master fundamental programming concepts"),
+                    "Build your very first simple program" if is_beginner else ("Design and build complex distributed systems" if is_advanced else "Build real projects to apply knowledge"),
+                    "Learn to find and fix simple errors" if is_beginner else ("Contribute to major open source projects" if is_advanced else "Learn advanced patterns and best practices")
+                ],
+                "tasks": [
+                    ["Learn to use a computer efficiently", "Understand files and folders", "Learn basic typing", "Understand what code is"] if is_beginner else
+                    (["Design scalable architectures", "Optimize system performance", "Implement security best practices", "Master DevOps practices"] if is_advanced else
+                     ["Install development tools and IDE", "Learn version control basics", "Write your first 'Hello World'", "Understand basic syntax"])
+                ]
+            }
+        }
+        
+        # Use general template if domain not found
+        if domain not in domain_templates:
+            return {
+                "titles": ["Getting Started", "Building Foundation", "Skill Development", "Advanced Practice"],
+                "descriptions": [
+                    f"Begin your journey with {goal_text if 'goal_text' in locals() else 'your goal'}",
+                    "Build a solid foundation of knowledge and skills",
+                    "Develop intermediate capabilities through practice",
+                    "Apply advanced techniques and master your craft"
+                ],
+                "tasks": [
+                    ["Research your goal", "Gather resources", "Create learning plan", "Set up workspace"],
+                    ["Study fundamentals", "Practice basic skills", "Join communities", "Find mentors"],
+                    ["Apply knowledge practically", "Seek feedback", "Overcome challenges", "Build confidence"],
+                    ["Master advanced techniques", "Teach others", "Continue learning", "Set new challenges"]
+                ]
+            }
+        
+        return domain_templates[domain]
     
     def _get_domain_resources(self, domain: str) -> List[str]:
         """Get domain-specific resources"""

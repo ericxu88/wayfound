@@ -177,19 +177,38 @@ export default function RoadmapDetailScreen() {
   const completedMilestones = milestones.filter((m: Milestone) => m.completed).length;
   const progressPercentage = milestones.length > 0 ? Math.round((completedMilestones / milestones.length) * 100) : 0;
 
-  // Use different containers for web vs mobile
-  const ScrollContainer = ScrollView; // Always use ScrollView
-  const scrollProps = {
-    style: [styles.container, Platform.OS === 'web' && styles.webScrollFix],
+  // Use different scroll components for web vs mobile
+  const isWeb = Platform.OS === 'web';
+  const ScrollContainer = isWeb ? View : ScrollView;
+  
+  const scrollProps = isWeb ? {
+    style: [styles.container, styles.webContainer]
+  } : {
+    style: styles.container,
     contentContainerStyle: styles.scrollContent,
     showsVerticalScrollIndicator: true,
-    ...(Platform.OS !== 'web' && {
-      refreshControl: <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-    })
+    refreshControl: <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />,
+    bounces: true,
+    scrollEnabled: true,
+    nestedScrollEnabled: true,
   };
+
+  const ContentWrapper = isWeb ? 
+    ({ children }: { children: React.ReactNode }) => (
+      <div style={{ 
+        height: '100vh', 
+        overflow: 'auto', 
+        WebkitOverflowScrolling: 'touch',
+        scrollBehavior: 'smooth'
+      } as any}>
+        {children}
+      </div>
+    ) : 
+    ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
   return (
     <ScrollContainer {...scrollProps}>
+      <ContentWrapper>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: domainColor }]}>
         <View style={styles.headerContent}>
@@ -370,6 +389,7 @@ export default function RoadmapDetailScreen() {
           </View>
         </View>
       </View>
+      </ContentWrapper>
     </ScrollContainer>
   );
 }
@@ -379,21 +399,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
-  webScrollFix: {
-    ...(Platform.OS === 'web' && {
-      overflow: 'scroll' as any,
-      height: '100vh' as any,
-    }),
-  },
-  webScrollContainer: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    ...(Platform.OS === 'web' && {
-      overflow: 'scroll' as any,
-      overflowY: 'scroll' as any,
-      WebkitOverflowScrolling: 'touch' as any,
-      height: '100vh' as any,
-    }),
+  webContainer: {
+    height: '100vh' as any,
+    overflow: 'hidden' as any,
   },
   scrollContent: {
     flexGrow: 1,
